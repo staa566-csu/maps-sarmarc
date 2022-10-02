@@ -1,0 +1,86 @@
+---
+title: "Maps"
+author: "Sarah Marcrum"
+format: html
+editor: visual
+---
+
+### Data Source
+
+<https://quickstats.nass.usda.gov/results/466778BB-552D-3C7C-B9B4-2BDE71F5AF1E>
+
+## Summary
+
+This graphic shows the primary crop in each Illinois county by acres harvested. I chose a color pallet with distinct colors to make it easy to distinguish the different crop designations for each county. Since a few counties did not have data, I chose to use a black outline on the map; this made it easy to see the county lines while also preventing the states without data (which are white) from blending into a white border. Making the map interactive allowed additional data (acres harvested, county names) to be shown in the tooltip instead of over-crowding the visualization.
+
+```{r, message=FALSE}
+#read data
+data <- read.csv('IL_crops_2021.csv')
+```
+
+```{r, echo=FALSE, message=FALSE}
+#filter relevant data
+library(dplyr)
+county <- data %>% select(County, Commodity, Data.Item, Value)
+```
+
+```{r, echo=FALSE, message=FALSE}
+library(data.table)
+county_harvest <- county %>% filter(Data.Item %like% "ACRES HARVESTED")
+
+#select top crop for each county by acres harvested
+top_county_harvest <- county_harvest %>% arrange(desc(Value)) %>%
+  group_by(County) %>%
+  slice(1)
+
+head(top_county_harvest)
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(tigris)
+
+#join map data
+IL <- counties("Illinois", cb = TRUE)
+IL$NAME <- toupper(IL$NAME)
+
+IL_harvest <- IL %>% 
+  left_join(top_county_harvest, by = c("NAME" = "County"))
+
+IL_harvest <- IL_harvest %>% rename("County" = "NAME", 
+                                    "Crop" = "Commodity",
+                                    "Acres" = "Value")
+
+head(IL_harvest)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(ggdendro)
+library(paletteer)
+library(plotly)
+
+# define highlight key
+hl <- highlight_key(IL_harvest, ~County)
+
+# create map
+p_harvest <- ggplot(data = hl) + 
+  geom_sf(color="black", aes(geometry = geometry, fill=Crop, label=County, label2=Acres))
+p_harvest <- p_harvest + ggdendro::theme_dendro()
+p_harvest <- p_harvest + guides(fill=guide_legend(title="Top Crop by Acres Harvested"))
+p_harvest <- p_harvest +  coord_sf() + scale_fill_paletteer_d("rtist::picasso") 
+p_harvest <- p_harvest + ggtitle("Top Crops in Illinois Counties")
+
+p_harvest
+
+```
+
+```{r, message=FALSE}
+#make it interactive!
+
+plt <- ggplotly(p_harvest, tooltip = c("County", "Crop", "Acres")) %>% highlight(
+  on = "plotly_hover",
+  off = "plotly_relayout"
+)
+
+plt
+```
